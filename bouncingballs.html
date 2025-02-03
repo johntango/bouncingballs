@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Elastic Ball Simulation</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      margin: 20px;
+    }
+    #controls {
+      margin-bottom: 10px;
+    }
+    .slider-container {
+      margin: 5px 0;
+    }
+    label {
+      margin-right: 10px;
+    }
+    canvas {
+      border: 1px solid #000;
+      background-color: #f5f5f5;
+      cursor: crosshair;
+    }
+  </style>
+</head>
+<body>
+  <h1>Elastic Ball Simulation</h1>
+  <div id="controls">
+    <div class="slider-container">
+      <label for="dtSlider">Time Step (dt): <span id="dtVal">0.5</span></label>
+      <input type="range" id="dtSlider" min="0.1" max="2" step="0.1" value="0.5">
+    </div>
+    <div class="slider-container">
+      <label for="gravitySlider">Gravity: <span id="gravityVal">0.5</span></label>
+      <input type="range" id="gravitySlider" min="0" max="2" step="0.1" value="0.5">
+    </div>
+    <div class="slider-container">
+      <label for="elasticitySlider">Elasticity: <span id="elasticityVal">0.9</span></label>
+      <input type="range" id="elasticitySlider" min="0" max="1" step="0.05" value="0.9">
+    </div>
+  </div>
+  <canvas id="canvas" width="800" height="600"></canvas>
+
+  <script>
+    // Get references to DOM elements
+    const canvas = document.getElementById("canvas");
+    const ctx = canvas.getContext("2d");
+    const dtSlider = document.getElementById("dtSlider");
+    const gravitySlider = document.getElementById("gravitySlider");
+    const elasticitySlider = document.getElementById("elasticitySlider");
+
+    const dtDisplay = document.getElementById("dtVal");
+    const gravityDisplay = document.getElementById("gravityVal");
+    const elasticityDisplay = document.getElementById("elasticityVal");
+
+    // Simulation parameters
+    let dt = parseFloat(dtSlider.value);
+    let gravity = parseFloat(gravitySlider.value);
+    let elasticity = parseFloat(elasticitySlider.value);
+
+    // Update display values when sliders change
+    dtSlider.addEventListener("input", () => {
+      dt = parseFloat(dtSlider.value);
+      dtDisplay.textContent = dt;
+    });
+    gravitySlider.addEventListener("input", () => {
+      gravity = parseFloat(gravitySlider.value);
+      gravityDisplay.textContent = gravity;
+    });
+    elasticitySlider.addEventListener("input", () => {
+      elasticity = parseFloat(elasticitySlider.value);
+      elasticityDisplay.textContent = elasticity;
+    });
+
+    // Array to store ball objects
+    const balls = [];
+    const ballRadius = 15;
+
+    // Utility: get mouse position relative to canvas
+    function getMousePos(canvas, evt) {
+      const rect = canvas.getBoundingClientRect();
+      return {
+        x: evt.clientX - rect.left,
+        y: evt.clientY - rect.top
+      };
+    }
+
+    // Create a new ball on canvas click
+    canvas.addEventListener("click", function(evt) {
+      const pos = getMousePos(canvas, evt);
+      // Random velocity components in the range [-5, 5]
+      const vx = (Math.random() * 10 - 5);
+      const vy = (Math.random() * 10 - 5);
+      const ball = {
+        x: pos.x,
+        y: pos.y,
+        vx: vx,
+        vy: vy,
+        radius: ballRadius,
+        mass: 1 // uniform mass
+      };
+      balls.push(ball);
+    });
+
+    // Function to update ball positions and handle physics
+    function update() {
+      // Move balls and apply gravity
+      for (let ball of balls) {
+        ball.vy += gravity * dt;  // apply gravity to vertical velocity
+        ball.x += ball.vx * dt;
+        ball.y += ball.vy * dt;
+
+        // Wall collisions (left and right)
+        if (ball.x - ball.radius < 0) {
+          ball.x = ball.radius;
+          ball.vx = -ball.vx * elasticity;
+        } else if (ball.x + ball.radius > canvas.width) {
+          ball.x = canvas.width - ball.radius;
+          ball.vx = -ball.vx * elasticity;
+        }
+        // Wall collisions (top and bottom)
+        if (ball.y - ball.radius < 0) {
+          ball.y = ball.radius;
+          ball.vy = -ball.vy * elasticity;
+        } else if (ball.y + ball.radius > canvas.height) {
+          ball.y = canvas.height - ball.radius;
+          ball.vy = -ball.vy * elasticity;
+        }
+      }
+
+      // Handle collisions between balls
+      for (let i = 0; i < balls.length; i++) {
+        for (let j = i + 1; j < balls.length; j++) {
+          const ball1 = balls[i];
+          const ball2 = balls[j];
+
+          const dx = ball2.x - ball1.x;
+          const dy = ball2.y - ball1.y;
+          const distance = Math.hypot(dx, dy);
+          const minDist = ball1.radius + ball2.radius;
+
+          if (distance < minDist) {
+            // Normalize the collision vector
+            const nx = dx / distance;
+            const ny = dy / distance;
+
+            // Relative velocity in the normal direction
+            const dvx = ball2.vx - ball1.vx;
+            const dvy = ball2.vy - ball1.vy;
+            const relVel = dvx * nx + dvy * ny;
+
+            // Only resolve if balls are moving toward each other
+            if (relVel < 0) {
+              // Impulse scalar
+              const impulse = -(1 + elasticity) * relVel / (ball1.mass + ball2.mass);
+
+              // Update velocities based on impulse
+              ball1.vx -= impulse * ball2.mass * nx;
+              ball1.vy -= impulse * ball2.mass * ny;
+              ball2.vx += impulse * ball1.mass * nx;
+              ball2.vy += impulse * ball1.mass * ny;
+
+              // Separate overlapping balls to prevent sticking
+              const overlap = minDist - distance;
+              ball1.x -= (overlap / 2) * nx;
+              ball1.y -= (overlap / 2) * ny;
+              ball2.x += (overlap / 2) * nx;
+              ball2.y += (overlap / 2) * ny;
+            }
+          }
+        }
+      }
+    }
+
+    // Function to clear the canvas and redraw the balls
+    function draw() {
+      // Clear canvas
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      // Draw each ball
+      for (let ball of balls) {
+        ctx.beginPath();
+        ctx.arc(ball.x, ball.y, ball.radius, 0, Math.PI * 2);
+        ctx.fillStyle = "#3498db";
+        ctx.fill();
+        ctx.strokeStyle = "#2980b9";
+        ctx.stroke();
+      }
+    }
+
+    // Animation loop
+    function animate() {
+      update();
+      draw();
+      requestAnimationFrame(animate);
+    }
+
+    // Start animation
+    animate();
+  </script>
+</body>
+</html>
